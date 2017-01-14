@@ -1,4 +1,12 @@
-#pragma once
+//
+//  MyForm.hpp
+//  MarketData
+//
+//  Created by 汪念怡 on 23/04/16.
+//  Copyright (c) 2016 汪念怡. All rights reserved.
+//
+
+
 #include "FetchData.h"
 #include "StockGroup.h"
 #include "Stock.h"
@@ -9,6 +17,7 @@
 #include <stack>
 #include <direct.h>
 #include "gnuplot_i.hpp"
+#include "Handler.h"
 
 namespace FinalProject {
 
@@ -66,8 +75,6 @@ namespace FinalProject {
 		System::ComponentModel::Container ^components;
 		StockGroup *g;
 		std::vector<Stock> *sVector;
-		std::vector<std::string> *sDateVector;
-		std::vector<std::string> *eDateVector;
 		int processFinishedCount{ 0 };
 		Bitmap^ myImage;
 	private: System::Windows::Forms::PictureBox^  pictureBox2;
@@ -617,8 +624,7 @@ namespace FinalProject {
 
 	private:void backgroundWorker_DoWork(Object^ sender, DoWorkEventArgs^ e) {
 		int index = (int)e->Argument;
-		FetchData f;
-		f.downloadData(g->getGroup(index / 40 + 1), (*sVector)[index].getTicker(), (*sDateVector)[index], (*eDateVector)[index]);
+		Handler::fillStock(g->getGroup(index / 40 + 1), (*sVector)[index].getTicker());
 		e->Result = e->Argument;
 	}
 
@@ -635,35 +641,56 @@ namespace FinalProject {
 		// Calculate AAR for all groups
 		int MAX_STOCK = 120;
 		if (processFinishedCount == MAX_STOCK) {
-			buttonMenu1->Enabled = TRUE;
-			processFinishedCount = 0;
-
-			for (int groupNumber = 1; groupNumber <= 3; groupNumber++) {
-				std::vector<double> AARVector(0);
-				Stock& s = g->getGroup(groupNumber)[(*sVector)[(groupNumber - 1) * 40].getTicker()];
-				//Stock& s = (*sVector)[(groupNumber - 1) * 40];
-
-				while (!s.getAR().empty()) {
-					double total{ 0.0 };
-					for (int i = 40 * (groupNumber - 1); i < 40 + 40 * (groupNumber - 1); i++)
-					{
-						Stock& sTemp = g->getGroup(groupNumber)[(*sVector)[i].getTicker()];
-						total += sTemp.getAR().top();
-						sTemp.getAR().pop();
-					}
-					AARVector.push_back(total / 40);
-				}
-				std::reverse(AARVector.begin(), AARVector.end());
-				// calculate CAAR
-				AARVector.push_back(AARVector[0]);
-				for (int i = 1; i < 60; i++)
-				{
-					AARVector.push_back(AARVector[i + 60 - 1] + AARVector[i]);
-				}
-				g->matrix.push_back(AARVector);
-			}
+			calculateAAR();
 		}
 	}
+
+	private: System::Void TimerEventProcessor(System::Object^  sender, System::EventArgs^  e)
+	{
+		System::Windows::Forms::Timer^ myTimer = safe_cast<System::Windows::Forms::Timer^>(sender);
+		myTimer->Stop();
+		int tag = safe_cast<int>(myTimer->Tag);
+		if (tag < 40) {
+			tabPage1->Controls->Remove(pb[tag]);
+		}
+		else if (tag >= 40 && tag < 80) {
+			tabPage2->Controls->Remove(pb[tag]);
+		}
+		else {
+			tabPage3->Controls->Remove(pb[tag]);
+		}
+
+	}
+
+	private:void calculateAAR() {
+		buttonMenu1->Enabled = TRUE;
+		processFinishedCount = 0;
+
+		for (int groupNumber = 1; groupNumber <= 3; groupNumber++) {
+			std::vector<double> AARVector(0);
+			Stock& s = g->getGroup(groupNumber)[(*sVector)[(groupNumber - 1) * 40].getTicker()];
+
+			while (!s.getAR().empty()) {
+				double total{ 0.0 };
+				for (int i = 40 * (groupNumber - 1); i < 40 + 40 * (groupNumber - 1); i++)
+				{
+					Stock& sTemp = g->getGroup(groupNumber)[(*sVector)[i].getTicker()];
+					total += sTemp.getAR().top();
+					sTemp.getAR().pop();
+				}
+				AARVector.push_back(total / 40);
+			}
+			std::reverse(AARVector.begin(), AARVector.end());
+			// calculate CAAR
+			AARVector.push_back(AARVector[0]);
+			for (int i = 1; i < 60; i++)
+			{
+				AARVector.push_back(AARVector[i + 60 - 1] + AARVector[i]);
+			}
+			g->matrix.push_back(AARVector);
+		}
+	}
+
 	private: System::Void buttonMenu1_Click(System::Object^  sender, System::EventArgs^  e) {
 		buttonMenu1->Enabled = FALSE;
 		for (int i = 0; i < 120; i++)
@@ -705,15 +732,6 @@ namespace FinalProject {
 
 		}
 
-		/*for (int j = 0; j < 40; j++) {
-			for (int i = j; i < 120; i+=40)
-			{
-				threads[i] = gcnew BackgroundWorker;
-				threads[i]->DoWork += gcnew DoWorkEventHandler(this, &MyForm::backgroundWorker_DoWork);
-				threads[i]->RunWorkerCompleted += gcnew RunWorkerCompletedEventHandler(this, &MyForm::backgroundWorker_RunWorkerCompleted);
-				threads[i]->RunWorkerAsync(i);
-			}
-		}*/
 		for (int i = 0; i < 120; i++)
 		{
 			threads[i] = gcnew BackgroundWorker;
@@ -725,13 +743,6 @@ namespace FinalProject {
 
 	private: System::Void b_Click(System::Object^  sender, System::EventArgs^  e) {
 		int index = (int)(safe_cast<Button^>(sender)->Tag);
-		Stock stock = g->getGroup(1)[(*sVector)[index].getTicker()];
-		Diagnostics::Debug::WriteLine("Netflix");
-		while (!stock.getAR().empty()) {
-			Diagnostics::Debug::WriteLine(stock.getAR().top());
-			stock.getAR().pop();
-		}
-		/*int index = (int)(safe_cast<Button^>(sender)->Tag);
 		Stock stock = (*sVector)[index];
 		std::string ticker = stock.getTicker();
 		labelTicker->Text = safe_cast<Button^>(sender)->Text;
@@ -772,18 +783,7 @@ namespace FinalProject {
 		surprise *= 100;
 		std::string strSurprise = std::to_string(surprise);
 		strSurprise = strSurprise.substr(0, strSurprise.find(".") + 3);
-		labelEPSSurprise->Text = gcnew String((strSurprise + " %").c_str());*/
-	}
-	private:void printPrices(std::string ticker) {
-		Diagnostics::Debug::WriteLine(gcnew String(ticker.c_str()));
-		std::stack<double> s = g->getGroup(1)[ticker].getPrice();
-
-		int i{ 0 };
-		while (s.size() != 0) {
-			Diagnostics::Debug::WriteLine(i + ": " + s.top());
-			s.pop();
-			i++;
-		}
+		labelEPSSurprise->Text = gcnew String((strSurprise + " %").c_str());
 	}
 
 	private: System::Void GroupPlot(System::Object^  sender, System::EventArgs^  e) {
@@ -904,25 +904,6 @@ namespace FinalProject {
 		return full;
 	}
 
-
-	private: System::Void TimerEventProcessor(System::Object^  sender, System::EventArgs^  e)
-	{
-		System::Windows::Forms::Timer^ myTimer = safe_cast<System::Windows::Forms::Timer^>(sender);
-		myTimer->Stop();
-		int tag = safe_cast<int>(myTimer->Tag);
-		if (tag < 40) {
-			tabPage1->Controls->Remove(pb[tag]);
-		}
-		else if (tag >= 40 && tag < 80) {
-			tabPage2->Controls->Remove(pb[tag]);
-		}
-		else {
-			tabPage3->Controls->Remove(pb[tag]);
-		}
-
-	}
-
-
 	private: System::Void MyForm_Load(System::Object^  sender, System::EventArgs^  e) {
 		// Make folder Data to store temporary files
 		std::string filePath = fullPath() + "TempData";
@@ -930,71 +911,16 @@ namespace FinalProject {
 		////////////////////////////////////////////
 
 		g = new StockGroup;
-		FetchData f;
 		sVector = new std::vector<Stock>;
-		sDateVector = new std::vector<std::string>;
-		eDateVector = new std::vector<std::string>;
 
-		f.fetchDataFromDatabase(g);
+		Handler::fetchDataFromDatabase(g);
 
 		for (int i = 1; i <= 3; i++) {
 			for (auto i : g->getGroup(i)) {
 				Stock& s = i.second;
 				sVector->push_back(s);
-
-				std::string cell{};
-				std::vector<std::string> v;
-				std::stringstream ss(s.getDate());
-				while (getline(ss, cell, '/'))
-				{
-					v.push_back(cell);
-				}
-				int month = stoi(v[0]);
-				int year = stoi(v[2]);
-
-				// collect 30 days backward and date zero
-
-				if (month > 2)
-					month -= 2;
-				else {
-					month = 11;
-					year -= 1;
-				}
-				std::string sDate = std::to_string(month) + "/01/" + std::to_string(year);
-				sDateVector->push_back(sDate);
-
-				// collect 30 days forward
-
-				month = stoi(v[0]);
-				year = stoi(v[2]);
-				if (month < 10)
-					month += 3;
-				else {
-					month = 3;
-					year += 1;
-				}
-				std::string eDate = std::to_string(month) + "/01/" + std::to_string(year);
-				eDateVector->push_back(eDate);
 			}
 		}
-
-		/*for (int i = 115; i < 120; i++)
-		{
-			Stock s = g->getGroup(3)[(*sVector)[i].getTicker()];
-			Diagnostics::Debug::WriteLine(gcnew String((*sDateVector)[i].c_str()));
-			Diagnostics::Debug::WriteLine(gcnew String((*eDateVector)[i].c_str()));
-		}*/
-
-		/*for (auto i : *sVector) {
-			Stock s = i;
-		}
-		for (auto i : *sDateVector) {
-			std::string s = i;
-		}
-		for (auto i : *eDateVector) {
-			std::string s = i;
-		}*/
-
 	}
 
 	private: System::Void MyForm_FormClosed(System::Object^  sender, System::Windows::Forms::FormClosedEventArgs^  e) {
@@ -1013,32 +939,8 @@ namespace FinalProject {
 
 		delete g;
 		delete sVector;
-		delete sDateVector;
-		delete eDateVector;
 	}
 
-
-
-			 //		 delegate void threadingDelegate(int param);
-			 //private: void threadMethod(Object^ data)
-			 //{
-			 //	//this->Invoke(gcnew MethodInvoker(this, &MyForm::threading));
-			 //	threadingDelegate^ td = gcnew threadingDelegate(this, &MyForm::threading);
-			 //	this->BeginInvoke(td, data);
-			 //}
-
-			 //private: void threading(int index)
-			 //{
-
-			 //	FetchData f;
-			 //	f.downloadData();
-			 //	pb[index]->Increment(100);
-			 //	//System::Windows::Forms::Timer^ myTimer = gcnew System::Windows::Forms::Timer;
-			 //	//myTimer->Tag = index;
-			 //	//myTimer->Tick += gcnew EventHandler(this, &MyForm::TimerEventProcessor);
-			 //	//myTimer->Interval = 1000;
-			 //	//myTimer->Start();
-			 //}
 
 	};
 }

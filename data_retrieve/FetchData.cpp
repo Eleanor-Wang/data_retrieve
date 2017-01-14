@@ -1,3 +1,11 @@
+//
+//  FetchData.cpp
+//  MarketData
+//
+//  Created by 汪念怡 on 17/04/16.
+//  Copyright (c) 2016 汪念怡. All rights reserved.
+//
+
 #include "FetchData.h"
 #include <iostream>
 #include <fstream>
@@ -196,6 +204,7 @@ void storePrice(map<string, Stock>& g, string ticker, string rawData, string typ
 			price.push_back(stod(s[6]));
 	}
 
+	// top is newest
 	if (type == "b") {
 		for (int i = 30; i >= 0; i--)
 			g[ticker].getPrice().push(price[i]);
